@@ -12,21 +12,27 @@ url = "https://fapi.binance.com/fapi/v1/ticker/24hr"
 
 def get_price_change(symbol):
     try:
-        resp = requests.get(f"{url}?symbol={symbol}")
+        resp = requests.get(url, params={"symbol": symbol})
         data = resp.json()
-        price = float(data["lastPrice"])
-        change = float(data["priceChangePercent"])
-        return price, change
+
+        if isinstance(data, dict) and "lastPrice" in data and "priceChangePercent" in data:
+            price = float(data["lastPrice"])
+            change = float(data["priceChangePercent"])
+            return price, change
+        else:
+            raise ValueError("Invalid response data structure")
     except Exception as e:
         print(f"Error for {symbol}: {e}")
         return None, None
 
 def send_telegram(msg):
     try:
-        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
+        resp = requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
             "chat_id": CHAT_ID,
             "text": msg
         })
+        if not resp.ok:
+            print(f"Telegram error: {resp.text}")
     except Exception as e:
         print(f"Telegram error: {e}")
 
