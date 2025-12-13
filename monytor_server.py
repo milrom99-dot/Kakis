@@ -1,56 +1,41 @@
-import requests, time, datetime
 
-# Замените на свои значения или используйте dotenv для безопасности
-TOKEN = 'ВАШ_ТОКЕН'
-CHAT_ID = 'ВАШ_CHAT_ID'
+import os
+import requests
+from dotenv import load_dotenv
 
-# Пороговые значения по умолчанию (можно расширить)
-THRESHOLDS = {
-    'BTCUSDT': 1.0,
-    'ETHUSDT': 1.0,
-    'SOLUSDT': 1.0
-}
+load_dotenv()
 
-def load_coins():
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+
+symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LINKUSDT", "XRPUSDT"]
+url = "https://fapi.binance.com/fapi/v1/ticker"
+
+def get_price_change(symbol):
     try:
-        with open("coins.txt", "r") as f:
-            return [line.strip().upper() for line in f if line.strip()]
-    except FileNotFoundError:
-        print("Файл coins.txt не найден. Создан пустой шаблон.")
-        with open("coins.txt", "w") as f:
-            f.write("BTCUSDT\nETHUSDT\nSOLUSDT\n")
-        return ['BTCUSDT', 'ETHUSDT', 'SOLUSDT']
-
-def send_message(text):
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    try:
-        r = requests.post(url, json={'chat_id': CHAT_ID, 'text': text})
-        r.raise_for_status()
+        resp = requests.get(f"{url}?symbol={symbol}")
+        data = resp.json()
+        price = float(data["lastPrice"])
+        change = float(data["priceChangePercent"])
+        return price, change
     except Exception as e:
-        print("Ошибка отправки:", e)
+        print(f"Error for {symbol}: {e}")
+        return None, None
 
-def check_prices():
-    coins = load_coins()
-    for symbol in coins:
-        url = f"https://fapi.binance.com/fapi/v1/ticker/24hr?symbol={symbol}"
-        try:
-            r = requests.get(url)
-            r.raise_for_status()
-            data = r.json()
-            change = float(data['priceChangePercent'])
-            price = float(data['lastPrice'])
-            emoji = "🔺" if change > 0 else "🔻"
-            if abs(change) >= THRESHOLDS.get(symbol, 1.0):
-                msg = f"{emoji} {symbol.replace('USDT','').lower()} {price:.2f} ({change:+.2f}%)"
-                send_message(msg)
-        except Exception as e:
-            print(f"Ошибка для {symbol}:", e)
+def send_telegram(msg):
+    try:
+        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
+            "chat_id": CHAT_ID,
+            "text": msg
+        })
+    except Exception as e:
+        print(f"Telegram error: {e}")
 
-def main():
-    while True:
-        print(f"[{datetime.datetime.now()}] Проверка...")
-        check_prices()
-        time.sleep(900)  # 15 минут
-
-if __name__ == '__main__':
-    main()
+for sym in symbols:
+    price, change = get_price_change(sym)
+    if price is not None:
+        coin = sym.replace("USDT", "")
+        arrow = "🔻" if change < 0 else "🔺"
+        msg = f"{coin} ${price:.2f} ({arrow} {change:.2f}%)"
+        print(msg)
+        send_telegram(msg)
