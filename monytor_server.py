@@ -9,7 +9,7 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LINKUSDT", "XRPUSDT"]
-url = "https://fapi.binance.com/fapi/v1/ticker/24hr"
+url = "https://api.binance.com/api/v3/ticker/24hr"
 
 def get_price_change(symbol):
     try:
