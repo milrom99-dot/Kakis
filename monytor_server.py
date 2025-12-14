@@ -1,65 +1,110 @@
 import os
 import requests
 from dotenv import load_dotenv
-from datetime import datetime
-import time
 
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LINKUSDT", "XRPUSDT"]
-url = "https://api.bybit.com/v5/market/kline"
-
-thresholds = {
-    "BTCUSDT": 0.7,
+# Монеты и пороги
+SYMBOLS = {
+    "BTCUSDT": 0.5,
     "ETHUSDT": 1.0,
-    "SOLUSDT": 1.2,
-    "LINKUSDT": 1.2,
-    "XRPUSDT": 1.2,
+    "SOLUSDT": 1.0,
+    "LINKUSDT": 1.0,
+    "XRPUSDT": 1.0,
 }
 
-def get_last_2x30m_klines(symbol):
+BYBIT_KLINE_URL = "https://api.bybit.com/v5/market/kline"
+
+
+def get_last_two_closed_30m(symbol):
+    """
+    Берём 3 свечи, используем 2 ЗАКРЫТЫЕ (предыдущие)
+    """
     try:
-        resp = requests.get(url, params={"category": "linear", "symbol": symbol, "interval": "30", "limit": 3})
-        data = resp.json()
-        if "result" not in data or "list" not in data["result"]:
-            print(f"Invalid response for {symbol}: {data}")
+        r = requests.get(
+            BYBIT_KLINE_URL,
+            params={
+                "category": "linear",
+                "symbol": symbol,
+                "interval": "30",
+                "limit": 3,
+            },
+            timeout=10
+        )
+        data = r.json()
+
+        if data.get("retCode") != 0:
+            print(f"{symbol}: API error {data}")
             return None
-        klines = data["result"]["list"]
-        return klines[-3:-1]  # последние 2 закрытые свечи
+
+        candles = data["result"]["list"]
+        if len(candles) < 3:
+            return None
+
+        # две закрытые свечи
+        return candles[-3], candles[-2]
+
     except Exception as e:
-        print(f"Error fetching klines for {symbol}: {e}")
+        print(f"{symbol}: request error {e}")
         return None
 
-def send_telegram(msg):
+
+def send_telegram(text):
+    if not TELEGRAM_TOKEN or not CHAT_ID:
+        return
+
     try:
-        requests.post(f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage", data={
-            "chat_id": CHAT_ID,
-            "text": msg
-        })
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            data={"chat_id": CHAT_ID, "text": text},
+            timeout=10
+        )
     except Exception as e:
         print(f"Telegram error: {e}")
 
-for symbol in symbols:
-    klines = get_last_2x30m_klines(symbol)
-    if not klines or len(klines) < 2:
+
+for symbol, threshold in SYMBOLS.items():
+    candles = get_last_two_closed_30m(symbol)
+    if not candles:
         continue
 
-    # Преобразуем строки в числа
-    highs = [float(k[3]) for k in klines]
-    lows = [float(k[4]) for k in klines]
-    closes = [float(k[4]) for k in klines]  # close = low (или k[5] - close)
+    c1, c2 = candles
 
-    high = max(highs)
-    low = min(lows)
-    price = closes[-1]  # close последней свечи
-    range_percent = (high - low) / low * 100
+    try:
+        # ВАЖНО: правильные индексы Bybit v5
+        high1 = float(c1[2])
+        low1 = float(c1[3])
+        high2 = float(c2[2])
+        low2 = float(c2[3])
+        close_price = float(c2[4])
 
-    print(f"{symbol}: high={high}, low={low}, price={price}, range={range_percent:.2f}%")
+        # ✅ ПРАВИЛЬНО
+        high = max(high1, high2)
+        low = min(low1, low2)
 
-    if range_percent >= thresholds[symbol]:
-        message = f"{symbol.replace('USDT','')}: цена ${price:.2f}, диапазон {range_percent:.2f}% за 2x30м свечи"
-        print("Sending:", message)
-        send_telegram(message)
+        if high <= low:
+            print(f"{symbol}: invalid high/low, skip")
+            continue
+
+        range_pct = (high - low) / low * 100
+
+        print(
+            f"{symbol}: high={high}, low={low}, "
+            f"price={close_price}, range={range_pct:.2f}%"
+        )
+
+        if range_pct >= threshold:
+            coin = symbol.replace("USDT", "")
+            msg = (
+                f"{coin}\n"
+                f"Цена: {close_price:.2f}\n"
+                f"Диапазон: {range_pct:.2f}% за 2×30м"
+            )
+            print("Sending:", msg)
+            send_telegram(msg)
+
+    except Exception as e:
+        print(f"{symbol}: calc error {e}")
