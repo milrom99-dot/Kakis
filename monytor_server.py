@@ -8,20 +8,24 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LINKUSDT", "XRPUSDT"]
-url = "https://api.bybit.com/v2/public/tickers"
+url = "https://api.bybit.com/v5/market/tickers?category=linear"
 
 def get_price_change(symbol):
     try:
         resp = requests.get(url)
-        data = resp.json()
-        if "result" not in data:
-            print(f"Invalid response data structure for {symbol}: {data}")
+        if resp.status_code != 200:
+            print(f"Error fetching data: {resp.status_code}")
             return None, None
 
-        for item in data["result"]:
+        data = resp.json()
+        if "result" not in data or "list" not in data["result"]:
+            print(f"Invalid response format: {data}")
+            return None, None
+
+        for item in data["result"]["list"]:
             if item["symbol"] == symbol:
-                price = float(item["last_price"])
-                change = float(item["percent_change_24h"])
+                price = float(item["lastPrice"])
+                change = float(item["price24hPcnt"]) * 100  # from 0.0123 to 1.23%
                 return price, change
 
         print(f"Symbol {symbol} not found in response.")
