@@ -1,3 +1,4 @@
+
 import os
 import requests
 from dotenv import load_dotenv
@@ -7,34 +8,34 @@ load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-symbols = {
-    "BTCUSDT": 0.5,
+symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LINKUSDT", "XRPUSDT"]
+price_change_thresholds = {
+    "BTCUSDT": 0.5,  # BTC: 0.5%
     "ETHUSDT": 1.0,
     "SOLUSDT": 1.0,
     "LINKUSDT": 1.0,
     "XRPUSDT": 1.0
 }
-url = "https://api.bybit.com/v2/public/tickers"
 
-def get_price_change(symbol):
+def get_current_price(symbol):
     try:
+        url = f"https://api.bybit.com/v2/public/tickers?symbol={symbol}"
         resp = requests.get(url)
         data = resp.json()
-        if "result" not in data:
-            print(f"Invalid response data structure for {symbol}: {data}")
-            return None, None
-
-        for item in data["result"]:
-            if item["symbol"] == symbol:
-                price = float(item["last_price"])
-                change = float(item["percent_change_24h"])
-                return price, change
-
-        print(f"Symbol {symbol} not found in response.")
-        return None, None
+        return float(data["result"][0]["last_price"])
     except Exception as e:
-        print(f"Error for {symbol}: {e}")
-        return None, None
+        print(f"Error (current) for {symbol}: {e}")
+        return None
+
+def get_open_price_1h(symbol):
+    try:
+        url = f"https://api.bybit.com/public/linear/kline?symbol={symbol}&interval=60&limit=1"
+        resp = requests.get(url)
+        data = resp.json()
+        return float(data["result"][0]["open"])
+    except Exception as e:
+        print(f"Error (1h open) for {symbol}: {e}")
+        return None
 
 def send_telegram(msg):
     try:
@@ -45,12 +46,15 @@ def send_telegram(msg):
     except Exception as e:
         print(f"Telegram error: {e}")
 
-for symbol, threshold in symbols.items():
-    price, change = get_price_change(symbol)
-    if price is not None:
+for sym in symbols:
+    last = get_current_price(sym)
+    open_1h = get_open_price_1h(sym)
+    if last and open_1h:
+        change = ((last - open_1h) / open_1h) * 100
+        threshold = price_change_thresholds.get(sym, 1.0)
         if abs(change) >= threshold:
-            coin = symbol.replace("USDT", "")
+            coin = sym.replace("USDT", "")
             arrow = "🔻" if change < 0 else "🔺"
-            msg = f"{coin} ${price:.2f} ({arrow} {change:.2f}%)"
+            msg = f"{arrow} {coin} {last:.2f} ({change:+.2f}%) — за 1 час"
             print(msg)
             send_telegram(msg)
