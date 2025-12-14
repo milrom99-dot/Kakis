@@ -9,11 +9,11 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # Монеты и пороги
 SYMBOLS = {
-    "BTCUSDT": 0.5,
+    "BTCUSDT": 0.7,
     "ETHUSDT": 1.0,
-    "SOLUSDT": 1.0,
-    "LINKUSDT": 1.0,
-    "XRPUSDT": 1.0,
+    "SOLUSDT": 1.2,
+    "LINKUSDT": 1.2,
+    "XRPUSDT": 1.2,
 }
 
 BYBIT_KLINE_URL = "https://api.bybit.com/v5/market/kline"
