@@ -1,4 +1,3 @@
-
 import os
 import requests
 from dotenv import load_dotenv
@@ -8,7 +7,13 @@ load_dotenv()
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
-symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LINKUSDT", "XRPUSDT"]
+symbols = {
+    "BTCUSDT": 0.5,
+    "ETHUSDT": 1.0,
+    "SOLUSDT": 1.0,
+    "LINKUSDT": 1.0,
+    "XRPUSDT": 1.0
+}
 url = "https://api.bybit.com/v2/public/tickers"
 
 def get_price_change(symbol):
@@ -40,23 +45,12 @@ def send_telegram(msg):
     except Exception as e:
         print(f"Telegram error: {e}")
 
-thresholds = {
-    "BTCUSDT": 0.5,
-    "ETHUSDT": 1.0,
-    "SOLUSDT": 1.0,
-    "LINKUSDT": 1.0,
-    "XRPUSDT": 1.0,
-}
-
-for sym in symbols:
-    price, change = get_price_change(sym)
+for symbol, threshold in symbols.items():
+    price, change = get_price_change(symbol)
     if price is not None:
-        threshold = thresholds.get(sym, 1.0)
         if abs(change) >= threshold:
-            coin = sym.replace("USDT", "")
+            coin = symbol.replace("USDT", "")
             arrow = "🔻" if change < 0 else "🔺"
-            msg = f"{coin} ${price:.2f} {arrow} ({change:.2f}%)"
+            msg = f"{coin} ${price:.2f} ({arrow} {change:.2f}%)"
             print(msg)
             send_telegram(msg)
-        else:
-            print(f"{sym}: изменение {change:.2f}% ниже порога {threshold}%")
