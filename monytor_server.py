@@ -1,37 +1,43 @@
 import os
 import requests
-from datetime import datetime
 from dotenv import load_dotenv
+import time
 
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-THRESHOLDS = {
-    "BTCUSDT": 0.5,
-    "ETHUSDT": 1.0,
-    "SOLUSDT": 1.0,
-    "LINKUSDT": 1.0,
-    "XRPUSDT": 1.0,
-}
-symbols = list(THRESHOLDS.keys())
-sent_flags = {}
 
-def get_klines(symbol):
-    url = f"https://api.bybit.com/v5/market/kline"
-    params = {
-        "category": "linear",
-        "symbol": symbol,
-        "interval": "30",
-        "limit": 3
-    }
+symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LINKUSDT", "XRPUSDT"]
+url = "https://api.bybit.com/v5/market/kline"
+
+# thresholds by coin
+thresholds = {
+    "BTC": 0.5,
+    "ETH": 1,
+    "SOL": 1,
+    "LINK": 1,
+    "XRP": 1
+}
+
+sent_cache = {}
+
+def get_kline(symbol):
     try:
-        res = requests.get(url, params=params)
-        data = res.json()
+        resp = requests.get(url, params={
+            "category": "linear",
+            "symbol": symbol,
+            "interval": "30",
+            "limit": 3
+        })
+        data = resp.json()
+        if "result" not in data or "list" not in data["result"]:
+            print(f"Invalid response structure for {symbol}: {data}")
+            return None
         return data["result"]["list"]
     except Exception as e:
-        print(f"Error fetching {symbol}: {e}")
-        return []
+        print(f"Error fetching klines for {symbol}: {e}")
+        return None
 
 def send_telegram(msg):
     try:
@@ -40,30 +46,44 @@ def send_telegram(msg):
             "text": msg
         })
     except Exception as e:
-        print(f"Telegram error: {e}")
+        print(f"Error sending telegram message: {e}")
 
-for symbol in symbols:
-    name = symbol.replace("USDT", "")
-    klines = get_klines(symbol)
-    if len(klines) < 3:
-        continue
+def analyze(symbol):
+    klines = get_kline(symbol)
+    if not klines or len(klines) < 3:
+        return
 
-    # берём две последние закрытые свечи
+    # use the last two closed candles
     k1 = klines[-3]
     k2 = klines[-2]
+
     high = max(float(k1[2]), float(k2[2]))
     low = min(float(k1[3]), float(k2[3]))
-    price = float(klines[-1][4])
-    direction = "вверх" if price > high else "вниз" if price < low else "флэт"
-    range_pct = (high - low) / low * 100
+    last_price = float(k2[4])
 
-    print(f"{symbol}: high={high}, low={low}, price={price}, range={range_pct:.2f}%")
+    range_percent = round(((high - low) / low) * 100, 2)
 
-    threshold = THRESHOLDS[symbol]
-    msg_key = f"{symbol}_{direction}"
+    name = symbol.replace("USDT", "")
+    threshold = thresholds.get(name, 1)
 
-    if range_pct >= threshold and not sent_flags.get(msg_key):
-        msg = f"{name}: диапазон {range_pct:.2f}% за 2x30м свечи ({direction}), цена: {price}"
-        print("Sending:", msg)
-        send_telegram(msg)
-        sent_flags[msg_key] = True
+    print(f"{symbol}: high={high}, low={low}, price={last_price}, range={range_percent}%")
+
+    if range_percent >= threshold:
+        # direction logic
+        direction = "флэт"
+        if float(k1[4]) > float(k1[1]) and float(k2[4]) > float(k2[1]):
+            direction = "вверх"
+        elif float(k1[4]) < float(k1[1]) and float(k2[4]) < float(k2[1]):
+            direction = "вниз"
+
+        msg = f"{name}: диапазон {range_percent}% за 2×30м свечи ({direction}), цена: {last_price}"
+
+        # avoid duplicates
+        last_sent = sent_cache.get(symbol)
+        if last_sent != msg:
+            print("Sending:", msg)
+            send_telegram(msg)
+            sent_cache[symbol] = msg
+
+for s in symbols:
+    analyze(s)
