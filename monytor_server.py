@@ -1,3 +1,4 @@
+
 import os
 import requests
 from dotenv import load_dotenv
@@ -8,24 +9,20 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LINKUSDT", "XRPUSDT"]
-url = "https://api.bybit.com/v5/market/tickers?category=linear"
+url = "https://api.bybit.com/v2/public/tickers"
 
 def get_price_change(symbol):
     try:
         resp = requests.get(url)
-        if resp.status_code != 200:
-            print(f"Error fetching data: {resp.status_code}")
-            return None, None
-
         data = resp.json()
-        if "result" not in data or "list" not in data["result"]:
-            print(f"Invalid response format: {data}")
+        if "result" not in data:
+            print(f"Invalid response data structure for {symbol}: {data}")
             return None, None
 
-        for item in data["result"]["list"]:
+        for item in data["result"]:
             if item["symbol"] == symbol:
-                price = float(item["lastPrice"])
-                change = float(item["price24hPcnt"]) * 100  # from 0.0123 to 1.23%
+                price = float(item["last_price"])
+                change = float(item["percent_change_24h"])
                 return price, change
 
         print(f"Symbol {symbol} not found in response.")
@@ -43,11 +40,23 @@ def send_telegram(msg):
     except Exception as e:
         print(f"Telegram error: {e}")
 
+thresholds = {
+    "BTCUSDT": 0.5,
+    "ETHUSDT": 1.0,
+    "SOLUSDT": 1.0,
+    "LINKUSDT": 1.0,
+    "XRPUSDT": 1.0,
+}
+
 for sym in symbols:
     price, change = get_price_change(sym)
     if price is not None:
-        coin = sym.replace("USDT", "")
-        arrow = "🔻" if change < 0 else "🔺"
-        msg = f"{coin} ${price:.2f} ({arrow} {change:.2f}%)"
-        print(msg)
-        send_telegram(msg)
+        threshold = thresholds.get(sym, 1.0)
+        if abs(change) >= threshold:
+            coin = sym.replace("USDT", "")
+            arrow = "🔻" if change < 0 else "🔺"
+            msg = f"{coin} ${price:.2f} {arrow} ({change:.2f}%)"
+            print(msg)
+            send_telegram(msg)
+        else:
+            print(f"{sym}: изменение {change:.2f}% ниже порога {threshold}%")
