@@ -1,4 +1,3 @@
-
 import os
 import requests
 from dotenv import load_dotenv
@@ -9,8 +8,6 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LINKUSDT", "XRPUSDT"]
-url = "https://api.bybit.com/v5/market/kline"
-
 thresholds = {
     "BTCUSDT": 0.5,
     "ETHUSDT": 1.0,
@@ -19,28 +16,15 @@ thresholds = {
     "XRPUSDT": 1.0,
 }
 
-def get_last_two_closed_30m_candles(symbol):
+def get_klines(symbol):
+    url = f"https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval=30&limit=3"
     try:
-        resp = requests.get(url, params={
-            "category": "linear",
-            "symbol": symbol,
-            "interval": "30",
-            "limit": 3  # берём 3, чтобы гарантированно были 2 закрытые
-        })
+        resp = requests.get(url)
         data = resp.json()
-        if "result" not in data or "list" not in data["result"]:
-            print(f"Invalid kline data for {symbol}: {data}")
-            return None, None
-
-        candles = data["result"]["list"]
-        # Берём 2 предыдущие свечи (не последнюю текущую)
-        prev1 = float(candles[-3][1])  # open
-        prev2 = float(candles[-2][4])  # close
-        return prev1, prev2
-
+        return data.get("result", {}).get("list", [])
     except Exception as e:
-        print(f"Error fetching candles for {symbol}: {e}")
-        return None, None
+        print(f"Error fetching klines for {symbol}: {e}")
+        return []
 
 def send_telegram(msg):
     try:
@@ -51,18 +35,21 @@ def send_telegram(msg):
     except Exception as e:
         print(f"Telegram error: {e}")
 
-messages = []
 for symbol in symbols:
-    open_price, close_price = get_last_two_closed_30m_candles(symbol)
-    if open_price is not None and close_price is not None:
-        change = ((close_price - open_price) / open_price) * 100
-        if abs(change) >= thresholds[symbol]:
-            emoji = "🔺" if change > 0 else "🔻"
-            messages.append(f"{symbol[:-4]} ${close_price:.2f} ({emoji} {change:.2f}%)")
+    klines = get_klines(symbol)
+    if len(klines) >= 3:
+        k1 = klines[-3]
+        k2 = klines[-2]
+        high = max(float(k1[2]), float(k2[2]))
+        low = min(float(k1[3]), float(k2[3]))
+        change = (high - low) / low * 100
+        threshold = thresholds.get(symbol, 1.0)
+        if change >= threshold:
+            coin = symbol.replace("USDT", "")
+            msg = f"{coin}: диапазон {change:.2f}% за 2x30м свечи"
+            print("Sending:", msg)
+            send_telegram(msg)
         else:
             print(f"{symbol}: change {change:.2f}% < threshold")
     else:
-        print(f"{symbol}: unable to compute change")
-
-if messages:
-    send_telegram("\n".join(messages))
+        print(f"Not enough kline data for {symbol}")
