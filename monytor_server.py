@@ -13,11 +13,11 @@ symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LINKUSDT", "XRPUSDT"]
 url = "https://api.bybit.com/v5/market/kline"
 
 thresholds = {
-    "BTCUSDT": 0.8,
+    "BTCUSDT": 0.7,
     "ETHUSDT": 1.0,
-    "SOLUSDT": 1.5,
-    "LINKUSDT": 1.5,
-    "XRPUSDT": 1.5,
+    "SOLUSDT": 1.2,
+    "LINKUSDT": 1.2,
+    "XRPUSDT": 1.2,
 }
 
 def get_last_2x30m_klines(symbol):
