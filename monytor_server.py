@@ -1,4 +1,3 @@
-
 import os
 import requests
 from datetime import datetime
@@ -8,26 +7,31 @@ load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
-
-symbols = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "LINKUSDT", "XRPUSDT"]
-thresholds = {
-    "BTCUSDT": 0.7,
+THRESHOLDS = {
+    "BTCUSDT": 0.5,
     "ETHUSDT": 1.0,
-    "SOLUSDT": 1.2,
-    "LINKUSDT": 1.2,
-    "XRPUSDT": 1.2,
+    "SOLUSDT": 1.0,
+    "LINKUSDT": 1.0,
+    "XRPUSDT": 1.0,
 }
-sent_alerts = {}
+symbols = list(THRESHOLDS.keys())
+sent_flags = {}
 
-def fetch_klines(symbol):
+def get_klines(symbol):
+    url = f"https://api.bybit.com/v5/market/kline"
+    params = {
+        "category": "linear",
+        "symbol": symbol,
+        "interval": "30",
+        "limit": 3
+    }
     try:
-        url = f"https://api.bybit.com/v5/market/kline?category=linear&symbol={symbol}&interval=30&limit=3"
-        resp = requests.get(url)
-        data = resp.json()
+        res = requests.get(url, params=params)
+        data = res.json()
         return data["result"]["list"]
     except Exception as e:
-        print(f"Error fetching data for {symbol}: {e}")
-        return None
+        print(f"Error fetching {symbol}: {e}")
+        return []
 
 def send_telegram(msg):
     try:
@@ -36,42 +40,30 @@ def send_telegram(msg):
             "text": msg
         })
     except Exception as e:
-        print(f"Error sending message: {e}")
+        print(f"Telegram error: {e}")
 
-def analyze_and_alert(symbol):
-    klines = fetch_klines(symbol)
-    if not klines or len(klines) < 3:
-        return
+for symbol in symbols:
+    name = symbol.replace("USDT", "")
+    klines = get_klines(symbol)
+    if len(klines) < 3:
+        continue
 
-    highs = [float(x[2]) for x in klines[-3:-1]]
-    lows = [float(x[3]) for x in klines[-3:-1]]
-    last_price = float(klines[-1][4])
-
-    high = max(highs)
-    low = min(lows)
-    direction = "вверх" if last_price > high else "вниз" if last_price < low else "в бок"
+    # берём две последние закрытые свечи
+    k1 = klines[-3]
+    k2 = klines[-2]
+    high = max(float(k1[2]), float(k2[2]))
+    low = min(float(k1[3]), float(k2[3]))
+    price = float(klines[-1][4])
+    direction = "вверх" if price > high else "вниз" if price < low else "флэт"
     range_pct = (high - low) / low * 100
 
-    print(f"{symbol}: high={high}, low={low}, price={last_price}, range={range_pct:.2f}%")
+    print(f"{symbol}: high={high}, low={low}, price={price}, range={range_pct:.2f}%")
 
-    if range_pct >= thresholds.get(symbol, 1.0):
-        alert_id = f"{symbol}_{round(high, 2)}_{round(low, 2)}"
-        if sent_alerts.get(symbol) == alert_id:
-            print(f"{symbol}: уже отправлено.")
-            return
+    threshold = THRESHOLDS[symbol]
+    msg_key = f"{symbol}_{direction}"
 
-        sent_alerts[symbol] = alert_id
-        name = symbol.replace("USDT", "")
-        msg = f"{name}
-Цена: {last_price:.2f}
-Диапазон: {range_pct:.2f}% за 2×30м
-Движение: {direction}"
+    if range_pct >= threshold and not sent_flags.get(msg_key):
+        msg = f"{name}: диапазон {range_pct:.2f}% за 2x30м свечи ({direction}), цена: {price}"
         print("Sending:", msg)
         send_telegram(msg)
-
-def main():
-    for symbol in symbols:
-        analyze_and_alert(symbol)
-
-if __name__ == "__main__":
-    main()
+        sent_flags[msg_key] = True
