@@ -13,11 +13,11 @@ url = "https://api.bybit.com/v5/market/kline"
 
 # thresholds by coin
 thresholds = {
-    "BTC": 0.5,
-    "ETH": 1,
-    "SOL": 1,
-    "LINK": 1,
-    "XRP": 1
+    "BTC": 0.75,
+    "ETH": 1.1,
+    "SOL": 1.2,
+    "LINK": 1.2,
+    "XRP": 1.2
 }
 
 sent_cache = {}
